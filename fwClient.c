@@ -6,6 +6,8 @@
  ****************************************************************************/
 #include "fwClient.h"
 
+
+int setaddrbyname(struct sockaddr_in *addr, char *host)
 /**
  * Function that sets the field addr->sin_addr.s_addr from a host name 
  * address.
@@ -13,7 +15,6 @@
  * @param host the host name to be converted
  * @return -1 if there has been a problem during the conversion process.
  */
-int setaddrbyname(struct sockaddr_in *addr, char *host)
 {
   struct addrinfo hints, *res;
 	int status;
@@ -35,6 +36,8 @@ int setaddrbyname(struct sockaddr_in *addr, char *host)
 }
 
 
+
+int getPort(int argc, char* argv[])
 /**
  * Returns the port specified as an application parameter or the default port
  * if no port has been specified.
@@ -44,7 +47,6 @@ int setaddrbyname(struct sockaddr_in *addr, char *host)
  * no port has been specified in the command line. Returns -1 if the application
  * has been called with the wrong parameters.
  */
-int getPort(int argc, char* argv[])
 {
   int param;
   int port = DEFAULT_PORT;
@@ -68,6 +70,8 @@ int getPort(int argc, char* argv[])
 	return port;
 }
 
+
+ char * getHost(int argc, char* argv[])
 /**
  * Returns the host name where the server is running.
  * @param argc the number of the application arguments.
@@ -75,7 +79,7 @@ int getPort(int argc, char* argv[])
  * @Return Returns the host name where the server is running.<br />
  * Returns null if the application has been called with the wrong parameters.
  */
- char * getHost(int argc, char* argv[]){
+ {
   char * hostName = NULL;
   int param;
 
@@ -101,10 +105,11 @@ int getPort(int argc, char* argv[])
 
 
 
+
+void print_menu()
 /**
  * Shows the menu options.
  */
-void print_menu()
 {
 		// Mostrem un menu perque l'usuari pugui triar quina opcio fer
 
@@ -119,12 +124,70 @@ void print_menu()
 		printf("Escull una opcio: ");
 }
 
+void readRule(char* addRule)
+/*
+*	This functions guides the user for getting a rule. Stores the values in 
+*	buffer passed by parameters
+*/
+{
 
+	char yes;
+	char srcdst[10];
+	unsigned short nsrcdst;
+	char addrQuad[20];
+	struct in_addr addr;
+	unsigned short netmask;
+	unsigned short src_dst_port = 0;
+	unsigned short port = 0;
+	
+	
+	memset(addRule,0,MAX_BUFF_SIZE);
+	printf("Introdueix la regla seguint el format:\n");
+	printf("src|dst Address Netmask [sport|dport] [port]\n");
+	
+	//Analisi del input
+	//src
+	printf("src|dst: ");
+	scanf("%s",srcdst);
+	if(!strcmp(srcdst,"src")) nsrcdst= SRC;
+	else nsrcdst= DST;
+	
+	//addr
+	printf("Address: ");
+	scanf("%s",addrQuad);
+	inet_aton(addrQuad,&addr);
+	
+	printf("Netmask: ");
+	scanf("%hu",&netmask);
+	
+	printf("¿Quieres especificar un puerto?(s/n)");
+	scanf("%c",&yes);
+	if(yes == 115) //115 is 's' in ascii table
+	{
+		printf("sport|dport: ");
+		scanf("%s",srcdst);
+		
+		if(!strcmp(srcdst,"src")) src_dst_port= SRC;
+		else src_dst_port= DST;
+		printf("port: ");
+		scanf("%hu",&port);
+	}
+
+	stshort(MSG_ADD,addRule);
+	memcpy(addRule+2,&addr,sizeof(addr));
+	stshort(nsrcdst,addRule+6);
+	stshort(netmask,addRule+8);
+	stshort(src_dst_port,addRule+10);
+	stshort(port,addRule+12);
+
+
+}
+
+void process_hello_operation(int sock)
 /**
  * Sends a HELLO message and prints the server response.
  * @param sock socket used for the communication.
  */
-void process_hello_operation(int sock)
 {
   struct hello_rp hello;
   unsigned short op_rp;
@@ -146,14 +209,15 @@ void process_hello_operation(int sock)
 	  
 }
 
+
+void process_exit_operation(int sock)
 /**
  * Closes the socket connected to the server and finishes the program.
  * @param sock socket used for the communication.
  */
-void process_exit_operation(int sock)
 {
 	
-	char fromServer[MAX_BUFF_SIZE];
+	char fromServer[4];
 	unsigned short op_rp;
 	
 	stshort(MSG_FINISH,fromServer);
@@ -206,6 +270,8 @@ void process_list_rules(int sock)
 			else strcpy(srcdst,"dst");
 			
 			netmask = ldshort(buffer+6);
+			printf("%hu",netmask);
+			fflush(stdout);
 			
 			sport=ldshort(buffer+8);
 			if(sport== SRC) strcpy(sportDport,"sport");
@@ -235,60 +301,14 @@ void process_add_rule(int sock)
 {
 	//request
 	char addRule[MAX_BUFF_SIZE];
-	char yes;
-	char srcdst[10];
-	unsigned short nsrcdst;
-	char addrQuad[20];
-	struct in_addr addr;
-	unsigned short netmask;
-	unsigned short src_dst_port = 0;
-	unsigned short port = 0;
 	
-	
-	memset(addRule,0,sizeof(addRule));
-	printf("Introdueix la regla seguint el format:\n");
-	printf("src|dst Address Netmask [sport|dport] [port]\n");
-	
-	//Analisi del input
-	//src
-	printf("src|dst: ");
-	scanf("%s",srcdst);
-	if(!strcmp(srcdst,"src")) nsrcdst= SRC;
-	else nsrcdst= DST;
-	
-	//addr
-	printf("Address: ");
-	scanf("%s",addrQuad);
-	inet_aton(addrQuad,&addr);
-	
-	printf("Netmask: ");
-	scanf("%hu",&netmask);
-	
-	printf("¿Quieres especificar un puerto?(s/n)");
-	scanf("%s",&yes);
-	if(!strcmp(&yes,"s"))
-	{
-		printf("sport|dport: ");
-		scanf("%s",srcdst);
-		
-		if(!strcmp(srcdst,"src")) src_dst_port= SRC;
-		else src_dst_port= DST;
-		printf("port: ");
-		scanf("%hu",&port);
-	}
-	printf("\n a enviar ");
-	stshort(MSG_ADD,addRule);
-	memcpy(addRule+2,&addr,sizeof(addr));
-	stshort(nsrcdst,addRule+6);
-	stshort(netmask,addRule+8);
-	stshort(src_dst_port,addRule+10);
-	stshort(port,addRule+12);
-	printf("\n enviando ");
+	readRule(addRule);
+
+
 	send(sock,&addRule,sizeof(addRule),0);
-	
-	
+
 	//response
-	unsigned char op_rp;
+	unsigned short op_rp;
 	memset(addRule,0,sizeof(addRule));
 	recv(sock,&addRule,sizeof(addRule),0);
     op_rp= ldshort(&addRule);
@@ -301,13 +321,70 @@ void process_add_rule(int sock)
 		printf("Ha habido algún fallo añadiendo la regla a la lista del servidor.\n");
 	}
 }
+
+void process_delete_rule(int sock)
+{
+	char del_rule[4]; //2bytes from OPCODE + 2Bytes from unsigned short indicating rule to delete
+	unsigned short numberToDelete;
+	printf("Please enter the number of the rule you want to delete(from 1 to 255):\n");
+	scanf("%hu",&numberToDelete);
+
+	while(numberToDelete < 1 || numberToDelete >255)
+	{
+		printf("The number introduced was not correct. Please try again.\n");
+		scanf("%hu",&numberToDelete);
+	}
+
+	stshort(MSG_DELETE,del_rule);
+	stshort(numberToDelete,del_rule+2);
+	send(sock,del_rule,sizeof(del_rule),0);
+
+	//response
+	unsigned short op_rp;
+	memset(del_rule,0,sizeof(del_rule));
+	recv(sock,&del_rule,sizeof(del_rule),0);
+    op_rp= ldshort(&del_rule);
+    if(op_rp == MSG_OK)
+    {
+		printf("Rule selected was removed correctly.\n");
+	}
+	else
+	{
+		printf("There was a problem removing the rule you selected. Probably the rule didn't exist, check again please\n");
+	}
+
+}
+
+void process_flush(int sock)
+{
+	char op_code[2]; //2bytes from OPCODE 
+
+	stshort(MSG_FLUSH,op_code);
+	send(sock,op_code,sizeof(op_code),0);
+
+	//response
+	unsigned short op_rp;
+	char err_code[4]; //2bytes from OPCODE + 2 bytes error specification
+	memset(err_code,0,sizeof(err_code));
+	recv(sock,&err_code,sizeof(err_code),0);
+    op_rp= ldshort(&err_code);
+    if(op_rp == MSG_OK)
+    {
+		printf("All rules were removed correctly.\n");
+	}
+	else
+	{
+		printf("There was a problem removing all the rules.\n");
+	}
+}
+
+void process_menu_option(int s, int option)
 /**
  * Function that process the menu option set by the user by calling
  * the function related to the menu option.
  * @param s The communications socket
  * @param option the menu option specified by the user.
  */
-void process_menu_option(int s, int option)
 {
   switch(option){
     // Opció HELLO
@@ -323,8 +400,10 @@ void process_menu_option(int s, int option)
     case MENU_OP_CHANGE_RULE:
       break;
     case MENU_OP_DEL_RULE:
+      process_delete_rule(s);
       break;
     case MENU_OP_FLUSH:
+      process_flush(s);
       break;
     case MENU_OP_EXIT:
 		process_exit_operation(s);
@@ -364,7 +443,7 @@ int main(int argc, char *argv[]){
 	{
 		printf("Conexió establida correctament\n");
 		do{
-		print_menu();
+		  print_menu();
 		  // getting the user input.
 		  scanf("%d",&menu_option);
 		  printf("\n\n");

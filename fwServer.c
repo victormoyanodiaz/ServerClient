@@ -5,7 +5,7 @@
  *  <mc@<host>>
  ****************************************************************************/
 
-#include "fwServer.h"	
+#include "fwServer.h"
 
 /**
  * Returns the port specified as an application parameter or the default port
@@ -48,7 +48,7 @@ void process_HELLO_msg(int sock)
 {
   struct hello_rp hello_resp;
 
-  char message[12]= "Hello World\0";
+  char message[12]= "Hello World";
   memcpy(&hello_resp.msg,message,sizeof(message));
   stshort(MSG_HELLO_RP,&hello_resp);
 
@@ -57,7 +57,7 @@ void process_HELLO_msg(int sock)
   //TODO
 }
 
-void process_FINISH_msg(int sock)
+void process_FINISH(int sock)
 {
 	char toClient[MAX_BUFF_SIZE];
 	memset(toClient,0,sizeof(toClient));
@@ -67,7 +67,7 @@ void process_FINISH_msg(int sock)
 	
 }
 
-void process_LIST_msg(int sock, struct FORWARD_chain *chain)
+void process_LIST(int sock, struct FORWARD_chain *chain)
 {
 	int i;
 	char bufferRules[MAX_BUFF_SIZE];
@@ -92,40 +92,34 @@ void process_LIST_msg(int sock, struct FORWARD_chain *chain)
 	}
 }
 
-void process_ADD_msg(int sock, rule* addRule, struct FORWARD_chain *chain)
+void process_ADD(int sock, rule* addRule, struct FORWARD_chain *chain)
 {
 	struct fw_rule* nodeRule;
 	rule* fowardRule;
 	
 	fowardRule = (rule*) malloc (sizeof(rule));
-	memcpy(fowardRule,addRule,sizeof(rule));
+	memmove(fowardRule,addRule,sizeof(rule));
 	
 	nodeRule= (struct fw_rule*) malloc(sizeof(struct fw_rule));
 	nodeRule->rule= *fowardRule;
 	nodeRule->next_rule= NULL;
 	
+	
 	if( chain->num_rules == 0)
 	{
-		printf("dd");
 		chain->first_rule= nodeRule;
 	}
 	else
 	{
-		printf("sf");
 		struct fw_rule* currentRule= chain->first_rule;
-		printf("abcsy");
-		while(currentRule != NULL)
+		while(currentRule->next_rule != NULL)
 		{
 			currentRule= currentRule->next_rule;
 		}
-		printf("sy");
 		currentRule->next_rule= nodeRule;
 	}
-	printf("added correctly");
 	(*(int*)chain) = (*(int*)chain)+1;
-	
-	
-	
+
 	//send OK to the client
 	char toClient[MAX_BUFF_SIZE];
 	memset(toClient,0,sizeof(toClient));
@@ -133,6 +127,87 @@ void process_ADD_msg(int sock, rule* addRule, struct FORWARD_chain *chain)
 	send(sock,&toClient,sizeof(toClient),0);
 	
 }
+
+void process_CHANGE(int sock, unsigned short ruleNumber, rule* addRule, struct FORWARD_chain *chain)
+{
+	//...
+}
+
+void process_DELETE(int sock, unsigned short ruleNumber, struct FORWARD_chain *chain)
+{
+	struct fw_rule* currentNodeRule;
+	currentNodeRule = chain->first_rule;
+
+	unsigned short currentRulePosition= 1; //first rule
+
+	char toClient[4];
+	memset(toClient,0,sizeof(toClient));
+
+	if(ruleNumber >  chain->num_rules)
+	{
+		
+		stshort(MSG_ERR,&toClient);
+		send(sock,&toClient,sizeof(toClient),0);
+	}
+	else
+	{
+		if(ruleNumber == 1)
+		{
+		//if the rule we want to eliminate is the first one, we have to set the first_rule to other one.
+		chain->first_rule=currentNodeRule->next_rule;
+		free(currentNodeRule);
+		}
+		else
+		{
+			struct fw_rule* previousNodeRule;
+			while( currentRulePosition < ruleNumber)
+			{
+				previousNodeRule= currentNodeRule;
+				currentNodeRule = currentNodeRule->next_rule;
+				currentRulePosition+=1;
+			}
+			//be sure of keeping a reference to the next rule of the rule we want to 
+			//eliminate, so we dont lose access to following rules.
+			previousNodeRule->next_rule= currentNodeRule->next_rule; 
+			free(currentNodeRule);
+		}
+
+		(*(int*)chain) = (*(int*)chain)-1;
+		fflush(stdout);
+
+		//send OK to the client
+		stshort(MSG_OK,&toClient);
+		send(sock,&toClient,sizeof(toClient),0);
+	}
+
+}
+
+void process_FLUSH(int sock, struct FORWARD_chain *chain)
+{
+
+	while(chain->num_rules != 0)
+	{
+		process_DELETE(sock,1,chain);
+	}
+
+	char toClient[4];
+	memset(toClient,0,sizeof(toClient));
+
+	if((chain-> num_rules == 0) && (chain->first_rule == NULL))
+	{
+		//send OK to Client
+		stshort(MSG_OK,&toClient);
+		send(sock,&toClient,sizeof(toClient),0);
+	}
+	else
+	{
+		//send error
+		stshort(MSG_ERR,&toClient);
+		send(sock,&toClient,sizeof(toClient),0);
+	}
+}
+
+int process_msg(int sock, struct FORWARD_chain *chain)
  /**
  * Receives and process the request from a client.
  * @param the socket connected to the client.
@@ -141,40 +216,42 @@ void process_ADD_msg(int sock, rule* addRule, struct FORWARD_chain *chain)
  * connection whith the client has to be closed. 0 if the user is still 
  * interacting with the client application.
  */
-int process_msg(int sock, struct FORWARD_chain *chain)
 {
   unsigned short op_code;
   int finish = 0;
-  
   rule addRule;
-  
   char buffer[MAX_BUFF_SIZE];
   int bytes= recv(sock,buffer,MAX_BUFF_SIZE,0);
-  printf("Se han leido %d bytes.\n",bytes);
- 
+  printf("Se han leido %d bytes\n",bytes);
+
   op_code = ldshort(buffer);
-  printf("%u",op_code);
+  
+  unsigned short ruleToEliminate;
+  unsigned short fromClient;
   switch(op_code)
   {
     case MSG_HELLO:
       process_HELLO_msg(sock);
-      printf("Hola");
       break;
     case MSG_LIST:
-	  process_LIST_msg(sock, chain);
+	  process_LIST(sock, chain);
       break;
     case MSG_ADD:
       memcpy(&addRule, buffer+2, sizeof(addRule));
-	  process_ADD_msg(sock, &addRule, chain);
+	  process_ADD(sock, &addRule, chain);
       break;
     case MSG_CHANGE:
       break;
     case MSG_DELETE:
+      memcpy(&fromClient,buffer+2,2);
+      ruleToEliminate = ldshort(&fromClient);
+      process_DELETE(sock,ruleToEliminate,chain);
       break;
     case MSG_FLUSH:
+      process_FLUSH(sock,chain);
       break;
     case MSG_FINISH:
-	  process_FINISH_msg(sock);
+	  process_FINISH(sock);
       finish = 1;
       break;
     default:
@@ -184,7 +261,9 @@ int process_msg(int sock, struct FORWARD_chain *chain)
   return finish;
 }
 
- int main(int argc, char *argv[]){
+
+
+int main(int argc, char *argv[]){
 
   int port = getPort(argc, argv);
   int finish=0;
