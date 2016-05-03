@@ -173,15 +173,16 @@ void readRule(char* addRule)
 		scanf("%hu",&port);
 	}
 
-	stshort(MSG_ADD,addRule);
-	memcpy(addRule+2,&addr,sizeof(addr));
-	stshort(nsrcdst,addRule+6);
-	stshort(netmask,addRule+8);
-	stshort(src_dst_port,addRule+10);
-	stshort(port,addRule+12);
+	
+	memcpy(addRule,&addr,sizeof(addr));
+	stshort(nsrcdst,addRule+4);
+	stshort(netmask,addRule+6);
+	stshort(src_dst_port,addRule+8);
+	stshort(port,addRule+10);
 
 
 }
+
 
 void process_hello_operation(int sock)
 /**
@@ -302,7 +303,8 @@ void process_add_rule(int sock)
 	//request
 	char addRule[MAX_BUFF_SIZE];
 	
-	readRule(addRule);
+	stshort(MSG_ADD,addRule);
+	readRule(addRule+2);
 
 
 	send(sock,&addRule,sizeof(addRule),0);
@@ -320,6 +322,45 @@ void process_add_rule(int sock)
 	{
 		printf("Ha habido algún fallo añadiendo la regla a la lista del servidor.\n");
 	}
+}
+
+void process_change_rule(int sock)
+{
+	char change_rule[16]; //2bytes from OPCODE + 2Bytes from unsigned short indicating rule to change+ 12bytes
+	unsigned short numberToDelete;
+	printf("Please enter the number of the rule you want to change(from 1 to 255):\n");
+	scanf("%hu",&numberToDelete);
+
+	while(numberToDelete < 1 || numberToDelete >255)
+	{
+		printf("The number introduced was not correct. Please try again.\n");
+		scanf("%hu",&numberToDelete);
+	}
+
+
+	stshort(MSG_CHANGE,change_rule);
+	stshort(numberToDelete,change_rule+2);
+	
+	readRule(change_rule+4);
+
+
+	send(sock,&change_rule,sizeof(change_rule),0);
+	//response
+	unsigned short op_rp;
+	memset(change_rule,0,sizeof(change_rule));
+	recv(sock,&change_rule,sizeof(change_rule),0);
+    op_rp= ldshort(&change_rule);
+    if(op_rp == MSG_OK)
+    {
+		printf("Rule selected was removed correctly.\n");
+	}
+	else
+	{
+		printf("There was a problem removing the rule you selected. Probably the rule didn't exist, check again please\n");
+	}
+
+	
+
 }
 
 void process_delete_rule(int sock)
@@ -378,6 +419,7 @@ void process_flush(int sock)
 	}
 }
 
+
 void process_menu_option(int s, int option)
 /**
  * Function that process the menu option set by the user by calling
@@ -398,6 +440,7 @@ void process_menu_option(int s, int option)
       process_add_rule(s);
       break;
     case MENU_OP_CHANGE_RULE:
+      process_change_rule(s);
       break;
     case MENU_OP_DEL_RULE:
       process_delete_rule(s);

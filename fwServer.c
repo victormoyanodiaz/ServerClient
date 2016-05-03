@@ -130,7 +130,75 @@ void process_ADD(int sock, rule* addRule, struct FORWARD_chain *chain)
 
 void process_CHANGE(int sock, unsigned short ruleNumber, rule* addRule, struct FORWARD_chain *chain)
 {
-	//...
+	struct fw_rule* currentNodeRule;
+	currentNodeRule = chain->first_rule;
+
+	unsigned short currentRulePosition= 1; //first rule
+
+	char toClient[4];
+	memset(toClient,0,sizeof(toClient));
+
+	if(ruleNumber >  chain->num_rules)
+	{
+		
+		stshort(MSG_ERR,&toClient);
+		send(sock,&toClient,sizeof(toClient),0);
+	}
+	else
+	{
+		if(ruleNumber == 1)
+		{
+		//if the rule we want to eliminate is the first one, we have to set the first_rule to other one.
+		chain->first_rule=currentNodeRule->next_rule;
+		free(currentNodeRule);
+		}
+		else
+		{
+			struct fw_rule* previousNodeRule;
+			while( currentRulePosition < ruleNumber)
+			{
+				previousNodeRule= currentNodeRule;
+				currentNodeRule = currentNodeRule->next_rule;
+				currentRulePosition+=1;
+			}
+			//be sure of keeping a reference to the next rule of the rule we want to 
+			//eliminate, so we dont lose access to following rules.
+			previousNodeRule->next_rule= currentNodeRule->next_rule; 
+			free(currentNodeRule);
+		}
+
+		(*(int*)chain) = (*(int*)chain)-1;
+
+		struct fw_rule* nodeRule;
+		rule* fowardRule;
+	
+		fowardRule = (rule*) malloc (sizeof(rule));
+		memmove(fowardRule,addRule,sizeof(rule));
+	
+		nodeRule= (struct fw_rule*) malloc(sizeof(struct fw_rule));
+		nodeRule->rule= *fowardRule;
+		nodeRule->next_rule= NULL;
+	
+	
+		if( chain->num_rules == 0)
+		{
+			chain->first_rule= nodeRule;
+		}
+		else
+		{
+			struct fw_rule* currentRule= chain->first_rule;
+			while(currentRule->next_rule != NULL)
+			{
+				currentRule= currentRule->next_rule;
+			}
+			currentRule->next_rule= nodeRule;
+		}
+		(*(int*)chain) = (*(int*)chain)+1;
+
+		//send OK to the client
+		stshort(MSG_OK,&toClient);
+		send(sock,&toClient,sizeof(toClient),0);
+	}	
 }
 
 void process_DELETE(int sock, unsigned short ruleNumber, struct FORWARD_chain *chain)
@@ -227,7 +295,6 @@ int process_msg(int sock, struct FORWARD_chain *chain)
   op_code = ldshort(buffer);
   
   unsigned short ruleToEliminate;
-  unsigned short fromClient;
   switch(op_code)
   {
     case MSG_HELLO:
@@ -241,10 +308,13 @@ int process_msg(int sock, struct FORWARD_chain *chain)
 	  process_ADD(sock, &addRule, chain);
       break;
     case MSG_CHANGE:
+      ruleToEliminate = ldshort(buffer+2);	
+      memcpy(&addRule,buffer+4,sizeof(addRule));
+      process_CHANGE(sock,ruleToEliminate,&addRule,chain);
       break;
     case MSG_DELETE:
-      memcpy(&fromClient,buffer+2,2);
-      ruleToEliminate = ldshort(&fromClient);
+      //memcpy(&fromClient,buffer+2,2);
+      ruleToEliminate = ldshort(buffer+2);
       process_DELETE(sock,ruleToEliminate,chain);
       break;
     case MSG_FLUSH:
@@ -284,19 +354,29 @@ int main(int argc, char *argv[]){
 
   struct sockaddr_in client;
   socklen_t addr = sizeof(client);
+  pid_t pid;
 
   while(1)
   {
 	//server alive
 	listen(s,MAX_QUEUED_CON);
+
 	int socketClient= accept(s,(struct sockaddr*)&client,&addr);
 	printf("Conexió Realitzada\n");
-    do {
-		//already connected with client
-      finish = process_msg(socketClient,&chain);
-    }while(!finish);
 
-    close(socketClient);
+	pid= fork();
+	if(pid == 0)
+	{
+		//case of children
+    	do {
+		//already connected with client
+      	finish = process_msg(socketClient,&chain);
+    	}while(!finish);
+
+    	close(socketClient);
+    	break;
+	}
+
   }
 
   return 0;
