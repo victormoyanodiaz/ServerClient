@@ -134,14 +134,14 @@ void readRule(char* addRule)
 	char yes;
 	char srcdst[10];
 	unsigned short nsrcdst;
-	char addrQuad[20];
+	char addrQuad[16];
 	struct in_addr addr;
 	unsigned short netmask;
 	unsigned short src_dst_port = 0;
 	unsigned short port = 0;
 	
 	
-	memset(addRule,0,MAX_BUFF_SIZE);
+	memset(addRule,0,12);
 	printf("Introdueix la regla seguint el format:\n");
 	printf("src|dst Address Netmask [sport|dport] [port]\n");
 	
@@ -161,7 +161,9 @@ void readRule(char* addRule)
 	scanf("%hu",&netmask);
 	
 	printf("¿Quieres especificar un puerto?(s/n)");
-	scanf("%c",&yes);
+	yes = getchar();
+	yes = getchar();
+
 	if(yes == 115) //115 is 's' in ascii table
 	{
 		printf("sport|dport: ");
@@ -194,13 +196,15 @@ void process_hello_operation(int sock)
   unsigned short op_rp;
   char buffer[MAX_BUFF_SIZE];
   
+  memset(buffer,0,sizeof(buffer));
   stshort(MSG_HELLO,buffer);
-  send(sock,buffer, sizeof(buffer), 0); //envia el hello al server
+
+  send(sock,buffer, sizeof(buffer), 0); //envia el hello request al server
   
   
   memset(&hello,0,sizeof(hello));
   memset(buffer,0,sizeof(buffer));
-  recv(sock,buffer,sizeof(buffer),0);
+  recv(sock,buffer,sizeof(buffer),0); //rep el hello world del server 
   
   memcpy(&hello,buffer,sizeof(hello));
   op_rp= ldshort(&hello);
@@ -218,11 +222,11 @@ void process_exit_operation(int sock)
  */
 {
 	
-	char fromServer[4];
+	char fromServer[MAX_BUFF_SIZE];
 	unsigned short op_rp;
 	
 	stshort(MSG_FINISH,fromServer);
-	send(sock,fromServer, sizeof(_exit), 0);
+	send(sock,fromServer, sizeof(fromServer), 0);
 	
 	memset(&fromServer,0,sizeof(fromServer));
 	recv(sock,&fromServer,sizeof(fromServer),0);
@@ -233,7 +237,7 @@ void process_exit_operation(int sock)
 
 void process_list_rules(int sock)
 {
-
+	char toServer[MAX_BUFF_SIZE];
     char rulesInfo[MAX_BUFF_SIZE];
     char buffer[RULE_SIZE]; //this buffer is for temporaly storing each rule. 
     int i;
@@ -249,8 +253,8 @@ void process_list_rules(int sock)
     char sportDport[5];
     unsigned short port;
     
-    stshort(MSG_LIST,&rulesInfo);
-    send(sock,&rulesInfo,sizeof(rulesInfo),0);
+    stshort(MSG_LIST,&toServer);
+    send(sock,&toServer,sizeof(toServer),0);
     printf("Regles de FORWARD:\n");
     memset(rulesInfo,0,sizeof(rulesInfo));
     recv(sock,&rulesInfo,sizeof(rulesInfo),0);
@@ -259,7 +263,6 @@ void process_list_rules(int sock)
     {
 		memset(buffer,0,sizeof(buffer));
 		number_rules = ldshort(rulesInfo+2); //the first 2 positions are for storing the operation code. The next 2 for the number of rules.
-		printf("%d\n",number_rules);
 		for (i=0; i< number_rules; i++)
 		{
 			memcpy(buffer,rulesInfo+4+i*RULE_SIZE,RULE_SIZE);
@@ -271,8 +274,6 @@ void process_list_rules(int sock)
 			else strcpy(srcdst,"dst");
 			
 			netmask = ldshort(buffer+6);
-			printf("%hu",netmask);
-			fflush(stdout);
 			
 			sport=ldshort(buffer+8);
 			if(sport== SRC) strcpy(sportDport,"sport");
@@ -326,11 +327,12 @@ void process_add_rule(int sock)
 
 void process_change_rule(int sock)
 {
-	char change_rule[16]; //2bytes from OPCODE + 2Bytes from unsigned short indicating rule to change+ 12bytes
+	char change_rule[MAX_BUFF_SIZE]; //2bytes from OPCODE + 2Bytes from unsigned short indicating rule to change+ 12bytes
+	memset(change_rule,0,sizeof(change_rule));
+
 	unsigned short numberToDelete;
 	printf("Please enter the number of the rule you want to change(from 1 to 255):\n");
 	scanf("%hu",&numberToDelete);
-
 	while(numberToDelete < 1 || numberToDelete >255)
 	{
 		printf("The number introduced was not correct. Please try again.\n");
@@ -343,16 +345,19 @@ void process_change_rule(int sock)
 	
 	readRule(change_rule+4);
 
-
-	send(sock,&change_rule,sizeof(change_rule),0);
+	fflush(stdout);
+	printf("%s",change_rule);
+	fflush(stdout);
+	send(sock,change_rule,sizeof(change_rule),0);
 	//response
 	unsigned short op_rp;
 	memset(change_rule,0,sizeof(change_rule));
-	recv(sock,&change_rule,sizeof(change_rule),0);
-    op_rp= ldshort(&change_rule);
+	recv(sock,change_rule,sizeof(change_rule),0);
+    op_rp= ldshort(change_rule);
+
     if(op_rp == MSG_OK)
     {
-		printf("Rule selected was removed correctly.\n");
+		printf("\nRule selected was removed correctly.\n");
 	}
 	else
 	{
@@ -365,7 +370,7 @@ void process_change_rule(int sock)
 
 void process_delete_rule(int sock)
 {
-	char del_rule[4]; //2bytes from OPCODE + 2Bytes from unsigned short indicating rule to delete
+	char del_rule[MAX_BUFF_SIZE]; //2bytes from OPCODE + 2Bytes from unsigned short indicating rule to delete
 	unsigned short numberToDelete;
 	printf("Please enter the number of the rule you want to delete(from 1 to 255):\n");
 	scanf("%hu",&numberToDelete);
@@ -398,14 +403,14 @@ void process_delete_rule(int sock)
 
 void process_flush(int sock)
 {
-	char op_code[2]; //2bytes from OPCODE 
+	char op_code[MAX_BUFF_SIZE]; //2bytes from OPCODE 
 
 	stshort(MSG_FLUSH,op_code);
 	send(sock,op_code,sizeof(op_code),0);
 
 	//response
 	unsigned short op_rp;
-	char err_code[4]; //2bytes from OPCODE + 2 bytes error specification
+	char err_code[MAX_BUFF_SIZE]; //2bytes from OPCODE + 2 bytes error specification
 	memset(err_code,0,sizeof(err_code));
 	recv(sock,&err_code,sizeof(err_code),0);
     op_rp= ldshort(&err_code);

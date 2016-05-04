@@ -64,7 +64,6 @@ void process_FINISH(int sock)
 	
 	stshort(MSG_OK,&toClient);
 	send(sock,&toClient,sizeof(toClient),0);
-	
 }
 
 void process_LIST(int sock, struct FORWARD_chain *chain)
@@ -132,25 +131,36 @@ void process_CHANGE(int sock, unsigned short ruleNumber, rule* addRule, struct F
 {
 	struct fw_rule* currentNodeRule;
 	currentNodeRule = chain->first_rule;
-
 	unsigned short currentRulePosition= 1; //first rule
 
-	char toClient[4];
+	char toClient[MAX_BUFF_SIZE];
 	memset(toClient,0,sizeof(toClient));
 
 	if(ruleNumber >  chain->num_rules)
 	{
 		
 		stshort(MSG_ERR,&toClient);
+
 		send(sock,&toClient,sizeof(toClient),0);
 	}
 	else
 	{
+		struct fw_rule* nodeRule;
+		rule* fowardRule;
+	
+		fowardRule = (rule*) malloc (sizeof(rule));
+		memmove(fowardRule,addRule,sizeof(rule));
+	
+		nodeRule= (struct fw_rule*) malloc(sizeof(struct fw_rule));
+		nodeRule->rule= *fowardRule;
+		nodeRule->next_rule= NULL;
+
 		if(ruleNumber == 1)
 		{
-		//if the rule we want to eliminate is the first one, we have to set the first_rule to other one.
-		chain->first_rule=currentNodeRule->next_rule;
-		free(currentNodeRule);
+			//if the rule we want to eliminate is the first one, we have to set the first_rule to other one.
+			chain->first_rule=nodeRule;
+			nodeRule->next_rule= currentNodeRule->next_rule;
+			free(currentNodeRule);
 		}
 		else
 		{
@@ -163,37 +173,10 @@ void process_CHANGE(int sock, unsigned short ruleNumber, rule* addRule, struct F
 			}
 			//be sure of keeping a reference to the next rule of the rule we want to 
 			//eliminate, so we dont lose access to following rules.
-			previousNodeRule->next_rule= currentNodeRule->next_rule; 
+			previousNodeRule->next_rule= nodeRule;
+			nodeRule->next_rule=currentNodeRule->next_rule; 
 			free(currentNodeRule);
 		}
-
-		(*(int*)chain) = (*(int*)chain)-1;
-
-		struct fw_rule* nodeRule;
-		rule* fowardRule;
-	
-		fowardRule = (rule*) malloc (sizeof(rule));
-		memmove(fowardRule,addRule,sizeof(rule));
-	
-		nodeRule= (struct fw_rule*) malloc(sizeof(struct fw_rule));
-		nodeRule->rule= *fowardRule;
-		nodeRule->next_rule= NULL;
-	
-	
-		if( chain->num_rules == 0)
-		{
-			chain->first_rule= nodeRule;
-		}
-		else
-		{
-			struct fw_rule* currentRule= chain->first_rule;
-			while(currentRule->next_rule != NULL)
-			{
-				currentRule= currentRule->next_rule;
-			}
-			currentRule->next_rule= nodeRule;
-		}
-		(*(int*)chain) = (*(int*)chain)+1;
 
 		//send OK to the client
 		stshort(MSG_OK,&toClient);
@@ -208,7 +191,7 @@ void process_DELETE(int sock, unsigned short ruleNumber, struct FORWARD_chain *c
 
 	unsigned short currentRulePosition= 1; //first rule
 
-	char toClient[4];
+	char toClient[MAX_BUFF_SIZE];
 	memset(toClient,0,sizeof(toClient));
 
 	if(ruleNumber >  chain->num_rules)
@@ -241,8 +224,8 @@ void process_DELETE(int sock, unsigned short ruleNumber, struct FORWARD_chain *c
 		}
 
 		(*(int*)chain) = (*(int*)chain)-1;
-		fflush(stdout);
 
+		if((*(int*)chain)== 0) chain->first_rule= NULL;
 		//send OK to the client
 		stshort(MSG_OK,&toClient);
 		send(sock,&toClient,sizeof(toClient),0);
@@ -255,10 +238,16 @@ void process_FLUSH(int sock, struct FORWARD_chain *chain)
 
 	while(chain->num_rules != 0)
 	{
-		process_DELETE(sock,1,chain);
+		struct fw_rule* currentNodeRule;
+		currentNodeRule = chain->first_rule;
+		
+		chain->first_rule=currentNodeRule->next_rule;
+		free(currentNodeRule);
+
+		(*(int*)chain) = (*(int*)chain)-1;
 	}
 
-	char toClient[4];
+	char toClient[MAX_BUFF_SIZE];
 	memset(toClient,0,sizeof(toClient));
 
 	if((chain-> num_rules == 0) && (chain->first_rule == NULL))
@@ -294,7 +283,7 @@ int process_msg(int sock, struct FORWARD_chain *chain)
 
   op_code = ldshort(buffer);
   
-  unsigned short ruleToEliminate;
+  unsigned short ruleToEliminate;	
   switch(op_code)
   {
     case MSG_HELLO:
